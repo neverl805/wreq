@@ -1,0 +1,13 @@
+target
+Cargo.lock
+*.swp
+.history
+.vscode
+.direnv
+result
+curl
+.idea
+**/*.rs.bk
+/.DS_Store
+keylog.txt
+*.json
