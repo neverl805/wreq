@@ -57,53 +57,25 @@ pub(crate) fn replace_headers(dst: &mut HeaderMap, src: HeaderMap) {
     // The first time a name is yielded, it will be Some(name), and if
     // there are more values with the same name, the next yield will be
     // None.
-    //
-    // MODIFIED: Complete override behavior - src replaces all values in dst for same key.
-    // If src has a header, it completely replaces all values of that header in dst.
-    // This allows user headers to completely override emulation/default headers.
 
     let mut prev_entry: Option<OccupiedEntry<_>> = None;
-    let mut first_value_for_key = true;
-
     for (key, value) in src {
         match key {
-            Some(key) => {
-                // New header key - this is the first value
-                first_value_for_key = true;
-
-                // CRITICAL: Remove all existing values for this key in dst first!
-                // HeaderMap::insert() only replaces the first value, but keeps additional values.
-                // We need complete replacement, so remove() all values first.
-                dst.remove(&key);
-
-                // Now insert the new value from src
-                match dst.entry(key) {
-                    Entry::Occupied(mut e) => {
-                        // This shouldn't happen since we just removed it, but handle it anyway
-                        e.insert(value);
-                        prev_entry = Some(e);
-                    }
-                    Entry::Vacant(e) => {
-                        let e = e.insert_entry(value);
-                        prev_entry = Some(e);
-                    }
+            Some(key) => match dst.entry(key) {
+                Entry::Occupied(mut e) => {
+                    e.insert(value);
+                    prev_entry = Some(e);
+                }
+                Entry::Vacant(e) => {
+                    let e = e.insert_entry(value);
+                    prev_entry = Some(e);
                 }
             },
-            None => {
-                // Additional value for the same header key
-                // IMPORTANT: Only append additional values from src, don't keep dst's old values
-                if first_value_for_key {
-                    // This should not happen (None should only come after Some)
-                    // but if it does, treat it as additional value
-                    first_value_for_key = false;
+            None => match prev_entry {
+                Some(ref mut entry) => {
+                    entry.append(value);
                 }
-
-                match prev_entry {
-                    Some(ref mut entry) => {
-                        entry.append(value);
-                    }
-                    None => unreachable!("HeaderMap::into_iter yielded None first"),
-                }
+                None => unreachable!("HeaderMap::into_iter yielded None first"),
             },
         }
     }
