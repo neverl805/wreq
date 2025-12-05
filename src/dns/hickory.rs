@@ -9,7 +9,7 @@ use hickory_resolver::{
     name_server::TokioConnectionProvider,
 };
 
-use super::{Addrs, Name, Resolve, Resolving};
+use super::{Addrs, Name, Resolve, Resolving, cache::GLOBAL_DNS_CACHE};
 
 /// Wrapper around an [`TokioResolver`], which implements the `Resolve` trait.
 #[derive(Debug, Clone)]
@@ -56,11 +56,50 @@ struct SocketAddrs {
     iter: LookupIpIntoIter,
 }
 
+/// Wrapper for cached socket addresses
+struct CachedSocketAddrs {
+    iter: std::vec::IntoIter<std::net::IpAddr>,
+}
+
+impl Iterator for CachedSocketAddrs {
+    type Item = SocketAddr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|ip_addr| SocketAddr::new(ip_addr, 0))
+    }
+}
+
 impl Resolve for HickoryDnsResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let resolver = self.clone();
         Box::pin(async move {
-            let lookup = resolver.resolver.lookup_ip(name.as_str()).await?;
+            let hostname = name.as_str();
+
+            // Check cache first
+            if let Some(cached_addrs) = GLOBAL_DNS_CACHE.get(hostname) {
+                trace!("Using cached DNS result for {}", hostname);
+                let ip_addrs: Vec<std::net::IpAddr> = cached_addrs.into_iter().map(|addr| addr.ip()).collect();
+                let addrs: Addrs = Box::new(CachedSocketAddrs {
+                    iter: ip_addrs.into_iter(),
+                });
+                return Ok(addrs);
+            }
+
+            // Cache miss - perform actual DNS lookup
+            debug!("DNS cache miss, resolving {}", hostname);
+            let lookup = resolver.resolver.lookup_ip(hostname).await?;
+
+            // Collect addresses for caching
+            let ip_addrs: Vec<_> = lookup.iter().collect();
+            let socket_addrs: Vec<SocketAddr> = ip_addrs.iter()
+                .map(|ip| SocketAddr::new(*ip, 0))
+                .collect();
+
+            // Cache the result
+            if !socket_addrs.is_empty() {
+                GLOBAL_DNS_CACHE.insert(hostname.to_string(), socket_addrs);
+            }
+
             let addrs: Addrs = Box::new(SocketAddrs {
                 iter: lookup.into_iter(),
             });

@@ -1,5 +1,6 @@
 //! DNS resolution
 
+pub(crate) mod cache;
 pub(crate) mod gai;
 #[cfg(feature = "hickory-dns")]
 pub(crate) mod hickory;

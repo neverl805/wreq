@@ -10,7 +10,7 @@ use std::{
 use tokio::task::JoinHandle;
 use tower::Service;
 
-use super::{Addrs, Name, Resolve, Resolving};
+use super::{Addrs, Name, Resolve, Resolving, cache::GLOBAL_DNS_CACHE};
 
 /// A resolver using blocking `getaddrinfo` calls in a threadpool.
 #[derive(Clone, Default)]
@@ -67,10 +67,29 @@ impl Resolve for GaiResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let mut this = self.clone();
         Box::pin(async move {
-            this.call(name)
-                .await
-                .map(|addrs| Box::new(addrs) as Addrs)
-                .map_err(Into::into)
+            let hostname = name.as_str().to_string();
+
+            // Check cache first
+            if let Some(cached_addrs) = GLOBAL_DNS_CACHE.get(&hostname) {
+                trace!("Using cached DNS result for {}", hostname);
+                return Ok(Box::new(GaiAddrs {
+                    inner: SocketAddrs::new(cached_addrs),
+                }) as Addrs);
+            }
+
+            // Cache miss - perform actual DNS lookup
+            debug!("DNS cache miss, resolving {} via getaddrinfo", hostname);
+            let result = this.call(name).await;
+
+            // Cache the result if successful
+            if let Ok(ref addrs) = result {
+                let socket_addrs: Vec<_> = addrs.inner.iter.as_slice().to_vec();
+                if !socket_addrs.is_empty() {
+                    GLOBAL_DNS_CACHE.insert(hostname, socket_addrs);
+                }
+            }
+
+            result.map(|addrs| Box::new(addrs) as Addrs).map_err(Into::into)
         })
     }
 }

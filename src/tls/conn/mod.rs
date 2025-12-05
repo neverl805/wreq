@@ -501,6 +501,10 @@ impl TlsConnectorBuilder {
                 .map_err(Error::tls)?;
         }
 
+        // TODO: Enable TLS 1.3 0-RTT Early Data when boring2 exposes the API
+        // Currently blocked by missing FFI bindings in boring2 crate
+        // See: opts.enable_early_data and opts.max_early_data_size
+
         // Set TLS keylog handler.
         if let Some(ref policy) = self.keylog {
             let handle = policy.clone().handle().map_err(Error::tls)?;

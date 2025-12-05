@@ -174,6 +174,24 @@ pub struct TlsOptions {
     ///
     /// **Default:** `false`
     pub random_aes_hw_override: bool,
+
+    /// Enables TLS 1.3 0-RTT (early data) for session resumption.
+    ///
+    /// When enabled, allows sending application data in the first flight of a resumed
+    /// TLS 1.3 handshake, reducing latency by up to one round trip.
+    ///
+    /// **Security Note:** Early data is vulnerable to replay attacks. Only use with
+    /// idempotent requests (GET, HEAD, OPTIONS). Never use with state-changing operations.
+    ///
+    /// **Default:** `false`
+    pub enable_early_data: bool,
+
+    /// Maximum amount of early data (in bytes) the client is willing to send.
+    ///
+    /// Only relevant when `enable_early_data` is `true`.
+    ///
+    /// **Default:** `16384` (16 KB)
+    pub max_early_data_size: u32,
 }
 
 impl TlsOptionsBuilder {
@@ -414,6 +432,26 @@ impl TlsOptionsBuilder {
         self
     }
 
+    /// Enables TLS 1.3 0-RTT (early data) for faster session resumption.
+    ///
+    /// **Security Warning:** Early data is vulnerable to replay attacks.
+    /// Only enable for idempotent requests (GET, HEAD, OPTIONS).
+    #[inline]
+    pub fn enable_early_data(mut self, enabled: bool) -> Self {
+        self.config.enable_early_data = enabled;
+        self
+    }
+
+    /// Sets the maximum early data size in bytes.
+    ///
+    /// Only relevant when early data is enabled.
+    /// Default is 16384 bytes (16 KB).
+    #[inline]
+    pub fn max_early_data_size(mut self, size: u32) -> Self {
+        self.config.max_early_data_size = size;
+        self
+    }
+
     /// Builds the `TlsOptions` from the builder.
     #[inline]
     pub fn build(self) -> TlsOptions {
@@ -459,6 +497,8 @@ impl Default for TlsOptions {
             aes_hw_override: None,
             preserve_tls13_cipher_list: None,
             random_aes_hw_override: false,
+            enable_early_data: false,
+            max_early_data_size: 16384,  // 16 KB default
         }
     }
 }
